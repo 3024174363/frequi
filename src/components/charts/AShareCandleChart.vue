@@ -10,8 +10,9 @@ import {
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption, TooltipComponentFormatterCallbackParams } from 'echarts';
-import type { AShareCandlesResponse } from '@/types/ashare';
+import type { StockMarketCandlesResponse } from '@/types/stockMarket';
 import { aShareIntraday, aShareVolumeLabel, formatAShareTime } from '@/utils/ashare';
+import { formatHKShareTime } from '@/utils/hkshare';
 
 use([
   BarChart,
@@ -23,7 +24,11 @@ use([
   CanvasRenderer,
 ]);
 
-const props = defineProps<{ dataset: AShareCandlesResponse; theme: 'dark' | 'light' }>();
+const props = defineProps<{ dataset: StockMarketCandlesResponse; theme: 'dark' | 'light' }>();
+const formatTime = (value: number, daily: boolean) =>
+  props.dataset.instrument.exchange === 'HK'
+    ? formatHKShareTime(value, daily)
+    : formatAShareTime(value, daily);
 const chart = useTemplateRef<InstanceType<typeof ECharts>>('chart');
 const up = '#ef4444';
 const down = '#22c55e';
@@ -35,7 +40,7 @@ function tooltip(params: TooltipComponentFormatterCallbackParams): string {
   const number = (value: number | null) =>
     value?.toLocaleString('zh-CN', { maximumFractionDigits: 3 }) ?? '—';
   return [
-    formatAShareTime(bar.timestamp, !aShareIntraday(props.dataset.timeframe)),
+    formatTime(bar.timestamp, !aShareIntraday(props.dataset.timeframe)),
     `开 ${number(bar.open)} / 高 ${number(bar.high)}`,
     `低 ${number(bar.low)} / 收 ${number(bar.close)}`,
     `成交量 ${number(bar.volume)} ${aShareVolumeLabel(props.dataset.meta.volume_unit)}`,
@@ -48,7 +53,7 @@ function tooltip(params: TooltipComponentFormatterCallbackParams): string {
 function update(initial = false) {
   const bars = props.dataset.candles;
   const labels = bars.map((bar) =>
-    formatAShareTime(bar.timestamp, !aShareIntraday(props.dataset.timeframe)),
+    formatTime(bar.timestamp, !aShareIntraday(props.dataset.timeframe)),
   );
   const option: EChartsOption = {
     backgroundColor: 'transparent',
@@ -86,6 +91,7 @@ function update(initial = false) {
         splitLine: { lineStyle: { opacity: 0.15 } },
       },
       {
+        show: props.dataset.meta.volume_unit !== 'unavailable',
         scale: true,
         gridIndex: 1,
         position: 'right',

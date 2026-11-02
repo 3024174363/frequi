@@ -31,6 +31,30 @@ For the QR Docker workspace (UI on 5173, API on 8090), use the `qr-workspace/`
 directory in the matching backend repository. It contains the Compose setup,
 startup scripts, usage details and restore instructions.
 
+## QR Hong Kong chart
+
+Chart also offers a **港股** market tab backed only by Tencent. Search by Chinese
+name or code (`700`, `02800.HK`, `hk00700`, `HK.00700`), with saved entries for
+Tencent Holdings, Alibaba, Tracker Fund, `HSI.HK` and `HSTECH.HK`. The period menu
+contains only native daily, weekly and monthly candles; minute OHLCV is not
+advertised. Quotes and candles show their actual Tencent source and data time.
+
+Hong Kong time, unadjusted prices and red-up/green-down colors apply. HKD stocks
+and ETFs show volume in shares/fund units and turnover in HKD; index prices are
+points, and unverified index volume/amount are missing with an explanation.
+Snapshot verification filters derivatives, REITs and non-HKD counters from search.
+The API uses `/api/v1/hkshare/{capabilities,search,quote,candles}` under the same
+login, with no additional bot, strategy or exchange setup.
+
+The existing A-share chart components and request composable take a market
+configuration. Market changes recreate the view, cancel requests and stop the old
+polling timer; symbol, period and backend changes also discard obsolete responses.
+Quotes poll about every 5 seconds within the Hong Kong continuous-session clock,
+candles about once per minute, and off-session checks slow to 60 seconds. Hidden
+tabs skip automatic requests. Refresh keeps zoom and successful data on failure.
+There is no complete holiday calendar or guaranteed feed latency; use the displayed
+data time. HK charts support viewing only, with no trading or backtesting.
+
 ## Run this project
 
 Using FreqUI requires [freqtrade](https://github.com/freqtrade/freqtrade) to be set up and running.

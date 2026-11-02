@@ -41,7 +41,14 @@ export function aShareSourceLabel(source?: string): string {
 }
 
 export function aShareVolumeLabel(unit?: string): string {
-  return { shares: '股', fund_units: '份', index_lots: '手（指数汇总）' }[unit ?? ''] ?? '上游单位';
+  return (
+    {
+      shares: '股',
+      fund_units: '份',
+      index_lots: '手（指数汇总）',
+      unavailable: '（量口径未核清）',
+    }[unit ?? ''] ?? '上游单位'
+  );
 }
 export function aShareIntraday(timeframe: AShareTimeframe): boolean {
   return ['1m', '5m', '15m', '30m', '1h'].includes(timeframe);

@@ -17,8 +17,19 @@ const chartStore = useChartConfigStore();
         @click="chartStore.market = 'ashare'"
         >A 股</UButton
       >
+      <UButton
+        :color="chartStore.market === 'hkshare' ? 'primary' : 'neutral'"
+        :aria-pressed="chartStore.market === 'hkshare'"
+        @click="chartStore.market = 'hkshare'"
+        >港股</UButton
+      >
     </div>
-    <AShareChartView v-if="chartStore.market === 'ashare'" class="flex-1" />
+    <AShareChartView
+      v-if="chartStore.market === 'ashare' || chartStore.market === 'hkshare'"
+      :key="chartStore.market"
+      :market="chartStore.market"
+      class="flex-1"
+    />
     <ChartView v-else class="flex-1" />
   </div>
 </template>

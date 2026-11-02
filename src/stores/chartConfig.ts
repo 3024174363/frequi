@@ -1,7 +1,7 @@
 export const useChartConfigStore = defineStore(
   'chartConfig',
   () => {
-    const market = ref<'crypto' | 'ashare'>('crypto');
+    const market = ref<'crypto' | 'ashare' | 'hkshare'>('crypto');
     const strategy = ref<string>('');
     const useLiveData = ref<boolean>(false);
     const selectedTimeframe = ref<string>('1h');

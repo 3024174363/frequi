@@ -4,31 +4,40 @@ import type { Ref } from 'vue';
 import { isApiError, useApi } from './api';
 import { useLoginInfo } from './loginInfo';
 import { aSharePollingDelay, aShareSourceLabel, aShareTimeframeLabel } from '@/utils/ashare';
+import { hkSharePollingDelay } from '@/utils/hkshare';
+import type { AShareTimeframe, AShareSource, AShareCapabilities } from '@/types/ashare';
 import type {
-  AShareCandlesResponse,
-  AShareInstrument,
-  AShareQuoteResponse,
-  AShareSearchResponse,
-  AShareTimeframe,
-  AShareSource,
-  AShareCapabilities,
-} from '@/types/ashare';
+  StockMarket,
+  StockMarketCandlesResponse,
+  StockMarketInstrument,
+  StockMarketQuoteResponse,
+  StockMarketSearchResponse,
+} from '@/types/stockMarket';
 
-export function useAShareChart(botId: Ref<string>) {
-  const selected = ref<AShareInstrument>({
-    symbol: '600519.SH',
-    name: '贵州茅台',
-    exchange: 'SH',
-    kind: 'stock',
-  });
-  const timeframe = ref<AShareTimeframe>('1m');
-  const candleSource = ref<AShareSource>('auto');
-  const quoteSource = ref<AShareSource>('auto');
+export function useAShareChart(botId: Ref<string>, market: StockMarket = 'ashare') {
+  const isHK = market === 'hkshare';
+  const prefix = `/${market}`;
+  const selected = ref<StockMarketInstrument>(
+    isHK
+      ? {
+          symbol: '00700' + '.HK',
+          name: '腾讯控股',
+          exchange: 'HK',
+          kind: 'stock',
+          currency: 'HKD',
+        }
+      : { symbol: '600519.SH', name: '贵州茅台', exchange: 'SH', kind: 'stock' },
+  );
+  const timeframe = ref<AShareTimeframe>(isHK ? '1d' : '1m');
+  const candleSource = ref<AShareSource>(isHK ? 'tencent' : 'auto');
+  const quoteSource = ref<AShareSource>(isHK ? 'tencent' : 'auto');
   const capabilities = shallowRef<AShareCapabilities>();
   const capabilityError = ref('');
   const sourceNotice = ref('');
   const availableTimeframes = computed(() => {
-    const supported = capabilities.value?.timeframes ?? ['1m', '1d'];
+    const supported =
+      capabilities.value?.timeframes ??
+      (isHK ? (['1d', '1w', '1M'] as const) : (['1m', '1d'] as const));
     const provider = capabilities.value?.providers.find((p) => p.source === candleSource.value);
     return supported
       .filter(
@@ -38,7 +47,7 @@ export function useAShareChart(botId: Ref<string>) {
   });
   function sourceOptions(operation: string) {
     return [
-      { value: 'auto' as AShareSource, label: '自动选择', disabled: false },
+      ...(isHK ? [] : [{ value: 'auto' as AShareSource, label: '自动选择', disabled: false }]),
       ...(capabilities.value?.providers ?? [])
         .filter((p) => p.operations.includes(operation))
         .map((p) => ({
@@ -51,12 +60,12 @@ export function useAShareChart(botId: Ref<string>) {
   const candleSourceOptions = computed(() => sourceOptions('candles'));
   const quoteSourceOptions = computed(() => sourceOptions('quote'));
   const autoRefresh = ref(true);
-  const quote = shallowRef<AShareQuoteResponse>();
-  const candles = shallowRef<AShareCandlesResponse>();
+  const quote = shallowRef<StockMarketQuoteResponse>();
+  const candles = shallowRef<StockMarketCandlesResponse>();
   const quoteError = ref('');
   const candlesError = ref('');
   const searchError = ref('');
-  const searchResults = shallowRef<AShareInstrument[]>([]);
+  const searchResults = shallowRef<StockMarketInstrument[]>([]);
   const searching = ref(false);
   const loadingQuote = ref(false);
   const loadingCandles = ref(false);
@@ -113,7 +122,7 @@ export function useAShareChart(botId: Ref<string>) {
     controllers.add(controller);
     searching.value = true;
     try {
-      const response = await client()<AShareSearchResponse>('/ashare/search', {
+      const response = await client()<StockMarketSearchResponse>(`${prefix}/search`, {
         query: { q: query.trim() },
         signal: controller.signal,
       });
@@ -144,7 +153,7 @@ export function useAShareChart(botId: Ref<string>) {
     capabilityController?.abort();
     capabilityController = controller;
     try {
-      const response = await client()<AShareCapabilities>('/ashare/capabilities', {
+      const response = await client()<AShareCapabilities>(`${prefix}/capabilities`, {
         signal: controller.signal,
       });
       if (stopped || botId.value !== id || controller.signal.aborted) return;
@@ -152,7 +161,7 @@ export function useAShareChart(botId: Ref<string>) {
       capabilityError.value = '';
     } catch {
       if (!stopped && botId.value === id && !controller.signal.aborted) {
-        capabilityError.value = '数据源列表获取失败，请重新进入 A 股页面重试';
+        capabilityError.value = `数据源列表获取失败，请重新进入${isHK ? '港股' : ' A 股'}页面重试`;
       }
     } finally {
       if (capabilityController === controller) capabilityController = undefined;
@@ -174,6 +183,7 @@ export function useAShareChart(botId: Ref<string>) {
   }
 
   function setTimeframe(value: AShareTimeframe) {
+    if (!availableTimeframes.value.some((item) => item.value === value)) return;
     sourceNotice.value = '';
     timeframe.value = value;
   }
@@ -181,7 +191,10 @@ export function useAShareChart(botId: Ref<string>) {
   function schedule() {
     clearTimer();
     if (autoRefresh.value && !stopped) {
-      timer = setTimeout(() => void refresh(false), aSharePollingDelay());
+      timer = setTimeout(
+        () => void refresh(false),
+        isHK ? hkSharePollingDelay() : aSharePollingDelay(),
+      );
     }
   }
 
@@ -201,8 +214,8 @@ export function useAShareChart(botId: Ref<string>) {
     controllers.add(controller);
     const api = client();
     loadingQuote.value = true;
-    const quoteTask = api<AShareQuoteResponse>('/ashare/quote', {
-      query: { symbol, source: requestedQuoteSource },
+    const quoteTask = api<StockMarketQuoteResponse>(`${prefix}/quote`, {
+      query: { symbol, ...(isHK ? {} : { source: requestedQuoteSource }) },
       signal: controller.signal,
     })
       .then((response) => {
@@ -225,11 +238,16 @@ export function useAShareChart(botId: Ref<string>) {
       });
 
     let candleTask: Promise<void> | undefined;
-    if (forceCandles || Date.now() - lastCandleRequest >= 12000) {
+    if (forceCandles || Date.now() - lastCandleRequest >= (isHK ? 60000 : 12000)) {
       lastCandleRequest = Date.now();
       loadingCandles.value = true;
-      candleTask = api<AShareCandlesResponse>('/ashare/candles', {
-        query: { symbol, timeframe: tf, limit: 320, source: requestedCandleSource },
+      candleTask = api<StockMarketCandlesResponse>(`${prefix}/candles`, {
+        query: {
+          symbol,
+          timeframe: tf,
+          limit: 320,
+          ...(isHK ? {} : { source: requestedCandleSource }),
+        },
         signal: controller.signal,
       })
         .then((response) => {
