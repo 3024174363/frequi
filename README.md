@@ -5,6 +5,26 @@
 
 Freqtrade UI built with [Vue.js](https://vuejs.org/) and [Nuxt UI](https://ui.nuxt.com/).
 
+## QR A-share chart
+
+The `qr-dev` branch adds an **A 股** market option to Chart. Connect to the matching
+QR backend, then search by Chinese name, code, or a qualified symbol such as
+`600519.SH`. Shanghai/Shenzhen stocks, major indices and listed ETFs support
+1-minute and daily candles, volume, snapshots and automatic refresh. Quotes use
+Beijing time, unadjusted prices, red for rising prices and green for falling prices.
+No extra bot, cryptocurrency exchange or strategy is required.
+
+The backend supplies authenticated `/api/v1/ashare/search`, `/quote`, `/candles`
+and `/capabilities` endpoints. Snapshots try Tencent then Sina. Candles currently
+use Tencent; the Eastmoney candle adapter remains disabled because its live
+endpoint did not pass network validation. Refresh failures retain the last data
+and show an error without marking the bot offline. There is no A-share trading,
+backtesting or complete exchange holiday calendar.
+
+For the QR Docker workspace (UI on 5173, API on 8090), use the `qr-workspace/`
+directory in the matching backend repository. It contains the Compose setup,
+startup scripts, usage details and restore instructions.
+
 ## Run this project
 
 Using FreqUI requires [freqtrade](https://github.com/freqtrade/freqtrade) to be set up and running.

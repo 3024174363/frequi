@@ -19,7 +19,11 @@ export function isTimeoutError(error: unknown): boolean {
   return isApiError(error) && (error.cause as Error | undefined)?.name === 'TimeoutError';
 }
 
-export function useApi(userService: UserServiceType, botId: string): { api: $Fetch } {
+export function useApi(
+  userService: UserServiceType,
+  botId: string,
+  behavior: { isolateMarketErrors?: boolean } = {},
+): { api: $Fetch } {
   function markBotOffline(loggedOut = false) {
     const botStore = useBotStore();
     const subStore = botStore.botStores[botId];
@@ -47,6 +51,7 @@ export function useApi(userService: UserServiceType, botId: string): { api: $Fet
       }
     },
     onRequestError() {
+      if (behavior.isolateMarketErrors) return;
       // fetch itself failed (network error, CORS, DNS, ...) - no response available.
       console.log('Bot not running...');
       markBotOffline();
@@ -62,7 +67,7 @@ export function useApi(userService: UserServiceType, botId: string): { api: $Fet
           // Refresh failed - don't retry, let the original 401 propagate to the caller.
           options.retry = 0;
         }
-      } else if (response.status === 500) {
+      } else if (response.status === 500 && !behavior.isolateMarketErrors) {
         console.log('Bot not running...');
         markBotOffline();
       }
