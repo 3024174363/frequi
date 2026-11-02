@@ -10,13 +10,19 @@ Freqtrade UI built with [Vue.js](https://vuejs.org/) and [Nuxt UI](https://ui.nu
 The `qr-dev` branch adds an **A 股** market option to Chart. Connect to the matching
 QR backend, then search by Chinese name, code, or a qualified symbol such as
 `600519.SH`. Shanghai/Shenzhen stocks, major indices and listed ETFs support
-1-minute and daily candles, volume, snapshots and automatic refresh. Quotes use
+1/5/15/30-minute, hourly, daily, weekly and monthly candles, volume, snapshots
+and automatic refresh. Quotes use
 Beijing time, unadjusted prices, red for rising prices and green for falling prices.
 No extra bot, cryptocurrency exchange or strategy is required.
 
 The backend supplies authenticated `/api/v1/ashare/search`, `/quote`, `/candles`
-and `/capabilities` endpoints. Snapshots try Tencent then Sina. Candles currently
-use Tencent; the Eastmoney candle adapter remains disabled because its live
+and `/capabilities` endpoints. Select candle and snapshot sources independently
+above the chart; the status strip shows their actual providers. Automatic mode
+tries Tencent then Sina for supported intervals. Manual selection uses only the
+chosen provider. Sina candles support 5/15/30 minutes, hourly and daily; unsupported
+intervals switch to 5 minutes with a notice when selecting Sina. Tencent also
+provides 1-minute, weekly and monthly candles. The Eastmoney candle adapter
+remains disabled because its live
 endpoint did not pass network validation. Refresh failures retain the last data
 and show an error without marking the bot offline. There is no A-share trading,
 backtesting or complete exchange holiday calendar.

@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { useAShareChart } from '@/composables/useAShareChart';
-import { aShareSourceLabel, aShareVolumeLabel, formatAShareTime } from '@/utils/ashare';
+import {
+  aShareIntraday,
+  aShareSourceLabel,
+  aShareVolumeLabel,
+  formatAShareTime,
+} from '@/utils/ashare';
 
 const botStore = useBotStore();
 const settings = useSettingsStore();
@@ -8,6 +13,13 @@ const chart = useAShareChart(toRef(() => botStore.selectedBot));
 const {
   selected,
   timeframe,
+  candleSource,
+  quoteSource,
+  candleSourceOptions,
+  quoteSourceOptions,
+  availableTimeframes,
+  capabilityError,
+  sourceNotice,
   autoRefresh,
   quote,
   candles,
@@ -104,13 +116,28 @@ function select(symbol: string) {
       </div>
       <UFormField label="周期">
         <USelect
-          v-model="timeframe"
-          :items="[
-            { label: '1 分钟', value: '1m' },
-            { label: '日 K', value: '1d' },
-          ]"
+          :model-value="timeframe"
+          :items="availableTimeframes"
           class="w-28"
           aria-label="A 股周期"
+          @update:model-value="chart.setTimeframe"
+        />
+      </UFormField>
+      <UFormField label="K 线数据源">
+        <USelect
+          :model-value="candleSource"
+          :items="candleSourceOptions"
+          class="w-40"
+          aria-label="K 线数据源"
+          @update:model-value="chart.setCandleSource"
+        />
+      </UFormField>
+      <UFormField label="报价数据源">
+        <USelect
+          v-model="quoteSource"
+          :items="quoteSourceOptions"
+          class="w-36"
+          aria-label="报价数据源"
         />
       </UFormField>
       <UButton icon="mdi:refresh" color="neutral" :loading="busy" @click="chart.refresh()"
@@ -121,6 +148,29 @@ function select(symbol: string) {
       >
       <span class="pb-1 text-xs text-muted">北京时间 · 不复权 · 红涨绿跌</span>
     </div>
+
+    <div
+      class="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-md bg-elevated/60 px-3 py-2 text-sm"
+      data-testid="ashare-sources"
+      aria-live="polite"
+    >
+      <span
+        >K 线当前来源：<strong>{{ aShareSourceLabel(candles?.meta.source) }}</strong
+        >{{ candles?.meta.fallback_used ? '（自动备用）' : ''
+        }}{{ candles?.meta.stale || candlesError ? ' · 更新失败' : '' }}</span
+      >
+      <span
+        >报价当前来源：<strong>{{ aShareSourceLabel(quote?.meta.source) }}</strong
+        >{{ quote?.meta.fallback_used ? '（自动备用）' : ''
+        }}{{ quote?.meta.stale || quoteError ? ' · 更新失败' : '' }}</span
+      >
+      <span v-if="candleSource !== 'auto' || quoteSource !== 'auto'" class="text-xs text-muted"
+        >手动指定来源时，失败会提示，不自动换源。</span
+      >
+    </div>
+    <p v-if="sourceNotice || capabilityError" role="status" class="text-sm text-warning">
+      {{ sourceNotice || capabilityError }}
+    </p>
 
     <div
       class="flex flex-wrap items-center justify-between gap-3 rounded-md bg-elevated/60 px-3 py-3"
@@ -177,7 +227,7 @@ function select(symbol: string) {
     <div class="flex min-h-80 flex-1 flex-col">
       <AShareCandleChart
         v-if="candles?.candles.length"
-        :key="`${botStore.selectedBot}:${selected.symbol}:${timeframe}`"
+        :key="`${botStore.selectedBot}:${selected.symbol}:${timeframe}:${candleSource}`"
         :dataset="candles"
         :theme="settings.chartTheme"
         class="min-h-80 flex-1"
@@ -201,14 +251,17 @@ function select(symbol: string) {
         {{ candles?.candles.length ?? 0 }} 根{{
           candles && !candles.complete ? '（上游可用数量不足）' : ''
         }}
-        · {{ formatAShareTime(candles?.coverage_start, timeframe === '1d') }} —
-        {{ formatAShareTime(candles?.coverage_end, timeframe === '1d')
+        · {{ formatAShareTime(candles?.coverage_start, !aShareIntraday(timeframe)) }} —
+        {{ formatAShareTime(candles?.coverage_end, !aShareIntraday(timeframe))
         }}{{ candles?.meta.stale || candlesError ? ' · 更新失败' : '' }}</span
       >
     </div>
     <p class="text-xs text-muted">
       分钟 K
       线按区间结束时间显示，最后一根可继续更新。节假日、停牌期间保留最近行情，请以行情时间为准。
+      <span v-if="selected.kind === 'index'"
+        >指数成交量按供应商统计范围汇总，不同来源数值可能不同。</span
+      >
     </p>
   </div>
 </template>

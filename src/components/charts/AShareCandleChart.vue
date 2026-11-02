@@ -11,7 +11,7 @@ import {
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption, TooltipComponentFormatterCallbackParams } from 'echarts';
 import type { AShareCandlesResponse } from '@/types/ashare';
-import { aShareVolumeLabel, formatAShareTime } from '@/utils/ashare';
+import { aShareIntraday, aShareVolumeLabel, formatAShareTime } from '@/utils/ashare';
 
 use([
   BarChart,
@@ -35,7 +35,7 @@ function tooltip(params: TooltipComponentFormatterCallbackParams): string {
   const number = (value: number | null) =>
     value?.toLocaleString('zh-CN', { maximumFractionDigits: 3 }) ?? '—';
   return [
-    formatAShareTime(bar.timestamp, props.dataset.timeframe === '1d'),
+    formatAShareTime(bar.timestamp, !aShareIntraday(props.dataset.timeframe)),
     `开 ${number(bar.open)} / 高 ${number(bar.high)}`,
     `低 ${number(bar.low)} / 收 ${number(bar.close)}`,
     `成交量 ${number(bar.volume)} ${aShareVolumeLabel(props.dataset.meta.volume_unit)}`,
@@ -48,7 +48,7 @@ function tooltip(params: TooltipComponentFormatterCallbackParams): string {
 function update(initial = false) {
   const bars = props.dataset.candles;
   const labels = bars.map((bar) =>
-    formatAShareTime(bar.timestamp, props.dataset.timeframe === '1d'),
+    formatAShareTime(bar.timestamp, !aShareIntraday(props.dataset.timeframe)),
   );
   const option: EChartsOption = {
     backgroundColor: 'transparent',
@@ -74,7 +74,7 @@ function update(initial = false) {
         axisLabel: {
           hideOverlap: true,
           formatter: (label: string) =>
-            props.dataset.timeframe === '1d' ? label : label.slice(5, 16),
+            aShareIntraday(props.dataset.timeframe) ? label.slice(5, 16) : label,
         },
       },
     ],

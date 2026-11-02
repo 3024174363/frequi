@@ -5,12 +5,26 @@ export interface AShareInstrument {
   kind: 'stock' | 'index' | 'etf';
 }
 
-export type AShareTimeframe = '1m' | '1d';
+export type AShareTimeframe = '1m' | '5m' | '15m' | '30m' | '1h' | '1d' | '1w' | '1M';
+export type AShareSource = 'auto' | 'tencent' | 'sina' | 'eastmoney';
+
+export interface AShareCapabilities {
+  timeframes: AShareTimeframe[];
+  providers: {
+    source: Exclude<AShareSource, 'auto'>;
+    enabled: boolean;
+    operations: string[];
+    timeframes: AShareTimeframe[];
+    reason: string | null;
+  }[];
+}
 
 export interface AShareMeta {
   source: string;
+  requested_source: AShareSource;
   fallback_used: boolean;
   volume_unit: string;
+  volume_note: string | null;
   adjustment: 'raw';
   data_time: string | null;
   fetched_at: string;

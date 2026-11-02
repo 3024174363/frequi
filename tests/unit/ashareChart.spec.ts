@@ -15,6 +15,24 @@ const index = { symbol: '000001.SH', name: '上证指数', exchange: 'SH', kind:
 const meta = { source: 'tencent', warning: null, stale: false };
 const quote = (instrument = stock, price = 10) => ({ instrument, quote: { price }, meta });
 const candles = () => ({ instrument: stock, timeframe: '1m', candles: [], meta });
+const capabilities = {
+  timeframes: ['1m', '5m', '15m', '30m', '1h', '1d', '1w', '1M'],
+  providers: [
+    {
+      source: 'tencent',
+      enabled: true,
+      operations: ['quote', 'candles'],
+      timeframes: ['1m', '5m', '15m', '30m', '1h', '1d', '1w', '1M'],
+    },
+    {
+      source: 'sina',
+      enabled: true,
+      operations: ['quote', 'candles'],
+      timeframes: ['5m', '15m', '30m', '1h', '1d'],
+    },
+    { source: 'eastmoney', enabled: false, operations: ['candles'], timeframes: ['1m', '1d'] },
+  ],
+};
 const flush = async () => {
   for (let i = 0; i < 10; i += 1) await Promise.resolve();
   await nextTick();
@@ -33,9 +51,11 @@ describe('A-share request lifecycle', () => {
       Promise.resolve(
         path.endsWith('/search')
           ? { items: [], warning: null }
-          : path.endsWith('/quote')
-            ? quote()
-            : candles(),
+          : path.endsWith('/capabilities')
+            ? capabilities
+            : path.endsWith('/quote')
+              ? quote()
+              : candles(),
       ),
     );
   });
@@ -92,6 +112,7 @@ describe('A-share request lifecycle', () => {
     void model.refresh();
     const oldSignal = signal;
     id.value = 'bot2';
+    await nextTick();
     expect(oldSignal?.aborted).toBe(true);
     expect(model.quote.value).toBeUndefined();
     expect(model.candles.value).toBeUndefined();
@@ -131,5 +152,79 @@ describe('A-share request lifecycle', () => {
     resolveOld({ items: [stock], warning: null });
     await pending;
     expect(model.searchResults.value).toEqual([]);
+  });
+
+  it('loads supported timeframes and disables an unavailable provider', async () => {
+    const model = scope.run(() => useAShareChart(ref('bot1')))!;
+    await flush();
+    expect(model.availableTimeframes.value.map((item) => item.value)).toEqual(
+      capabilities.timeframes,
+    );
+    expect(
+      model.candleSourceOptions.value.find((item) => item.value === 'eastmoney')?.disabled,
+    ).toBe(true);
+    expect(model.quoteSourceOptions.value.map((item) => item.value)).toEqual([
+      'auto',
+      'tencent',
+      'sina',
+    ]);
+  });
+
+  it('switches to supported Sina candles while sending explicit sources', async () => {
+    const model = scope.run(() => useAShareChart(ref('bot1')))!;
+    await flush();
+    request.mockClear();
+    model.setCandleSource('sina');
+    await flush();
+    expect(model.timeframe.value).toBe('5m');
+    expect(model.sourceNotice.value).toContain('不支持1 分钟');
+    expect(model.availableTimeframes.value.map((item) => item.value)).toEqual(
+      capabilities.providers[1]?.timeframes,
+    );
+    const calls = request.mock.calls.filter(([path]) => path.endsWith('/candles'));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1].query).toMatchObject({ timeframe: '5m', source: 'sina' });
+    model.quoteSource.value = 'sina';
+    await flush();
+    expect(request.mock.calls.findLast(([path]) => path.endsWith('/quote'))?.[1].query.source).toBe(
+      'sina',
+    );
+  });
+
+  it('rejects late responses when changing only the provider', async () => {
+    const model = scope.run(() => useAShareChart(ref('bot1')))!;
+    await flush();
+    let resolveOld: (data: unknown) => void = () => {};
+    request.mockImplementation((path: string, options: { query: { source: string } }) => {
+      if (path.endsWith('/candles')) return Promise.resolve(candles());
+      if (options.query.source === 'auto')
+        return new Promise((resolve) => {
+          resolveOld = resolve;
+        });
+      return Promise.resolve({
+        ...quote(),
+        quote: { price: 20 },
+        meta: { ...meta, source: 'sina' },
+      });
+    });
+    void model.refresh();
+    model.quoteSource.value = 'sina';
+    await flush();
+    resolveOld(quote(stock, 99));
+    await flush();
+    expect(model.quote.value?.quote.price).toBe(20);
+    expect(model.quote.value?.meta.source).toBe('sina');
+  });
+
+  it('clears the automatic period change notice after a manual period selection', async () => {
+    const model = scope.run(() => useAShareChart(ref('bot1')))!;
+    await flush();
+    model.setCandleSource('sina');
+    await flush();
+    expect(model.sourceNotice.value).toContain('已切换为5 分钟');
+    model.setTimeframe('30m');
+    await flush();
+    expect(model.timeframe.value).toBe('30m');
+    expect(model.sourceNotice.value).toBe('');
   });
 });

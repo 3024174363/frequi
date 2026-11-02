@@ -3,13 +3,15 @@ import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue';
 import type { Ref } from 'vue';
 import { isApiError, useApi } from './api';
 import { useLoginInfo } from './loginInfo';
-import { aSharePollingDelay } from '@/utils/ashare';
+import { aSharePollingDelay, aShareSourceLabel, aShareTimeframeLabel } from '@/utils/ashare';
 import type {
   AShareCandlesResponse,
   AShareInstrument,
   AShareQuoteResponse,
   AShareSearchResponse,
   AShareTimeframe,
+  AShareSource,
+  AShareCapabilities,
 } from '@/types/ashare';
 
 export function useAShareChart(botId: Ref<string>) {
@@ -20,6 +22,34 @@ export function useAShareChart(botId: Ref<string>) {
     kind: 'stock',
   });
   const timeframe = ref<AShareTimeframe>('1m');
+  const candleSource = ref<AShareSource>('auto');
+  const quoteSource = ref<AShareSource>('auto');
+  const capabilities = shallowRef<AShareCapabilities>();
+  const capabilityError = ref('');
+  const sourceNotice = ref('');
+  const availableTimeframes = computed(() => {
+    const supported = capabilities.value?.timeframes ?? ['1m', '1d'];
+    const provider = capabilities.value?.providers.find((p) => p.source === candleSource.value);
+    return supported
+      .filter(
+        (tf) => candleSource.value === 'auto' || !provider || provider.timeframes.includes(tf),
+      )
+      .map((tf) => ({ value: tf, label: aShareTimeframeLabel(tf) }));
+  });
+  function sourceOptions(operation: string) {
+    return [
+      { value: 'auto' as AShareSource, label: '自动选择', disabled: false },
+      ...(capabilities.value?.providers ?? [])
+        .filter((p) => p.operations.includes(operation))
+        .map((p) => ({
+          value: p.source as AShareSource,
+          label: aShareSourceLabel(p.source) + (p.enabled ? '' : '（暂不可用）'),
+          disabled: !p.enabled,
+        })),
+    ];
+  }
+  const candleSourceOptions = computed(() => sourceOptions('candles'));
+  const quoteSourceOptions = computed(() => sourceOptions('quote'));
   const autoRefresh = ref(true);
   const quote = shallowRef<AShareQuoteResponse>();
   const candles = shallowRef<AShareCandlesResponse>();
@@ -34,6 +64,7 @@ export function useAShareChart(botId: Ref<string>) {
   const clients = new Map<string, $Fetch>();
   const controllers = new Set<AbortController>();
   let searchController: AbortController | undefined;
+  let capabilityController: AbortController | undefined;
   let generation = 0;
   let searchGeneration = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -107,6 +138,46 @@ export function useAShareChart(botId: Ref<string>) {
     searching.value = false;
   }
 
+  async function loadCapabilities() {
+    const id = botId.value;
+    const controller = new AbortController();
+    capabilityController?.abort();
+    capabilityController = controller;
+    try {
+      const response = await client()<AShareCapabilities>('/ashare/capabilities', {
+        signal: controller.signal,
+      });
+      if (stopped || botId.value !== id || controller.signal.aborted) return;
+      capabilities.value = response;
+      capabilityError.value = '';
+    } catch {
+      if (!stopped && botId.value === id && !controller.signal.aborted) {
+        capabilityError.value = '数据源列表获取失败，请重新进入 A 股页面重试';
+      }
+    } finally {
+      if (capabilityController === controller) capabilityController = undefined;
+    }
+  }
+
+  function setCandleSource(value: AShareSource) {
+    const provider = capabilities.value?.providers.find((p) => p.source === value);
+    if (value !== 'auto' && (!provider?.enabled || !provider.timeframes.length)) return;
+    sourceNotice.value = '';
+    if (provider && !provider.timeframes.includes(timeframe.value)) {
+      const next = provider.timeframes[0];
+      if (next) {
+        sourceNotice.value = `${aShareSourceLabel(value)}不支持${aShareTimeframeLabel(timeframe.value)}，已切换为${aShareTimeframeLabel(next)}`;
+        timeframe.value = next;
+      }
+    }
+    candleSource.value = value;
+  }
+
+  function setTimeframe(value: AShareTimeframe) {
+    sourceNotice.value = '';
+    timeframe.value = value;
+  }
+
   function schedule() {
     clearTimer();
     if (autoRefresh.value && !stopped) {
@@ -124,16 +195,24 @@ export function useAShareChart(botId: Ref<string>) {
     const context = generation;
     const symbol = selected.value.symbol;
     const tf = timeframe.value;
+    const requestedQuoteSource = quoteSource.value;
+    const requestedCandleSource = candleSource.value;
     const controller = new AbortController();
     controllers.add(controller);
     const api = client();
     loadingQuote.value = true;
     const quoteTask = api<AShareQuoteResponse>('/ashare/quote', {
-      query: { symbol },
+      query: { symbol, source: requestedQuoteSource },
       signal: controller.signal,
     })
       .then((response) => {
-        if (context !== generation || stopped) return;
+        if (
+          context !== generation ||
+          stopped ||
+          selected.value.symbol !== symbol ||
+          quoteSource.value !== requestedQuoteSource
+        )
+          return;
         quote.value = response;
         selected.value = response.instrument;
         quoteError.value = response.meta.warning ?? '';
@@ -150,11 +229,18 @@ export function useAShareChart(botId: Ref<string>) {
       lastCandleRequest = Date.now();
       loadingCandles.value = true;
       candleTask = api<AShareCandlesResponse>('/ashare/candles', {
-        query: { symbol, timeframe: tf, limit: 320 },
+        query: { symbol, timeframe: tf, limit: 320, source: requestedCandleSource },
         signal: controller.signal,
       })
         .then((response) => {
-          if (context !== generation || stopped) return;
+          if (
+            context !== generation ||
+            stopped ||
+            selected.value.symbol !== symbol ||
+            timeframe.value !== tf ||
+            candleSource.value !== requestedCandleSource
+          )
+            return;
           candles.value = response;
           candlesError.value = response.meta.warning ?? '';
         })
@@ -171,7 +257,7 @@ export function useAShareChart(botId: Ref<string>) {
   }
 
   watch(
-    [botId, () => selected.value.symbol, timeframe],
+    [botId, () => selected.value.symbol, timeframe, candleSource, quoteSource],
     ([id], previous) => {
       const backendChanged = previous?.[0] !== id;
       invalidate();
@@ -181,13 +267,20 @@ export function useAShareChart(botId: Ref<string>) {
       candlesError.value = '';
       lastCandleRequest = 0;
       if (backendChanged) {
+        capabilityController?.abort();
+        capabilities.value = undefined;
+        capabilityError.value = '';
+        sourceNotice.value = '';
         searchResults.value = [];
         searchError.value = '';
-        if (id) void search('');
+        if (id) {
+          void search('');
+          void loadCapabilities();
+        }
       }
       if (id) void refresh();
     },
-    { immediate: true, flush: 'sync' },
+    { immediate: true },
   );
   watch(autoRefresh, (enabled) => {
     if (enabled) void refresh();
@@ -195,12 +288,22 @@ export function useAShareChart(botId: Ref<string>) {
   });
   onScopeDispose(() => {
     stopped = true;
+    capabilityController?.abort();
     invalidate();
   });
 
   return {
     selected,
     timeframe,
+    candleSource,
+    quoteSource,
+    candleSourceOptions,
+    quoteSourceOptions,
+    availableTimeframes,
+    capabilityError,
+    sourceNotice,
+    setCandleSource,
+    setTimeframe,
     autoRefresh,
     quote,
     candles,
